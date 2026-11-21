@@ -186,13 +186,6 @@ func TestRerun(t *testing.T) {
 					httpmock.REST("GET", "repos/OWNER/REPO/actions/runs/1234"),
 					httpmock.JSONResponse(shared.FailedRun))
 				reg.Register(
-					httpmock.REST("GET", "repos/OWNER/REPO/actions/workflows/123"),
-					httpmock.JSONResponse(workflowShared.WorkflowsPayload{
-						Workflows: []workflowShared.Workflow{
-							shared.TestWorkflow,
-						},
-					}))
-				reg.Register(
 					httpmock.REST("POST", "repos/OWNER/REPO/actions/runs/1234/rerun"),
 					httpmock.StringResponse("{}"))
 			},
@@ -209,13 +202,6 @@ func TestRerun(t *testing.T) {
 				reg.Register(
 					httpmock.REST("GET", "repos/OWNER/REPO/actions/runs/1234"),
 					httpmock.JSONResponse(shared.FailedRun))
-				reg.Register(
-					httpmock.REST("GET", "repos/OWNER/REPO/actions/workflows/123"),
-					httpmock.JSONResponse(workflowShared.WorkflowsPayload{
-						Workflows: []workflowShared.Workflow{
-							shared.TestWorkflow,
-						},
-					}))
 				reg.Register(
 					httpmock.REST("POST", "repos/OWNER/REPO/actions/runs/1234/rerun-failed-jobs"),
 					httpmock.StringResponse("{}"))
@@ -250,13 +236,6 @@ func TestRerun(t *testing.T) {
 					httpmock.REST("GET", "repos/OWNER/REPO/actions/runs/1234"),
 					httpmock.JSONResponse(shared.FailedRun))
 				reg.Register(
-					httpmock.REST("GET", "repos/OWNER/REPO/actions/workflows/123"),
-					httpmock.JSONResponse(workflowShared.WorkflowsPayload{
-						Workflows: []workflowShared.Workflow{
-							shared.TestWorkflow,
-						},
-					}))
-				reg.Register(
 					httpmock.REST("POST", "repos/OWNER/REPO/actions/runs/1234/rerun"),
 					httpmock.StringResponse("{}"))
 			},
@@ -275,13 +254,6 @@ func TestRerun(t *testing.T) {
 				reg.Register(
 					httpmock.REST("GET", "repos/OWNER/REPO/actions/runs/1234"),
 					httpmock.JSONResponse(shared.FailedRun))
-				reg.Register(
-					httpmock.REST("GET", "repos/OWNER/REPO/actions/workflows/123"),
-					httpmock.JSONResponse(workflowShared.WorkflowsPayload{
-						Workflows: []workflowShared.Workflow{
-							shared.TestWorkflow,
-						},
-					}))
 				reg.Register(
 					httpmock.REST("POST", "repos/OWNER/REPO/actions/runs/1234/rerun-failed-jobs"),
 					httpmock.StringResponse("{}"))
@@ -308,6 +280,44 @@ func TestRerun(t *testing.T) {
 			wantDebug: true,
 		},
 		{
+			name: "arg including onlyFailed when workflow metadata is unavailable",
+			tty:  true,
+			opts: &RerunOptions{
+				RunID:      "1234",
+				OnlyFailed: true,
+			},
+			httpStubs: func(reg *httpmock.Registry) {
+				reg.Register(
+					httpmock.REST("GET", "repos/OWNER/REPO/actions/runs/1234"),
+					httpmock.JSONResponse(shared.FailedRun))
+				// Workflows required by an organization ruleset are defined in
+				// another repository, so their metadata 404s here. Rerun only
+				// needs the run ID and must not look the workflow up.
+				reg.Exclude(t, httpmock.REST("GET", "repos/OWNER/REPO/actions/workflows/123"))
+				reg.Register(
+					httpmock.REST("POST", "repos/OWNER/REPO/actions/runs/1234/rerun-failed-jobs"),
+					httpmock.StringResponse("{}"))
+			},
+			wantOut: "✓ Requested rerun (failed jobs) of run 1234\n",
+		},
+		{
+			name: "run not found",
+			tty:  true,
+			opts: &RerunOptions{
+				RunID: "1234",
+			},
+			httpStubs: func(reg *httpmock.Registry) {
+				reg.Register(
+					httpmock.REST("GET", "repos/OWNER/REPO/actions/runs/1234"),
+					httpmock.JSONErrorResponse(404, api.HTTPError{
+						StatusCode: 404,
+						Message:    "Not Found",
+					}))
+			},
+			wantErr: true,
+			errOut:  "failed to get run: HTTP 404: Not Found (https://api.github.com/repos/OWNER/REPO/actions/runs/1234?exclude_pull_requests=true)",
+		},
+		{
 			name: "prompt",
 			tty:  true,
 			opts: &RerunOptions{
@@ -324,13 +334,6 @@ func TestRerun(t *testing.T) {
 					httpmock.JSONResponse(shared.FailedRun))
 				reg.Register(
 					httpmock.REST("GET", "repos/OWNER/REPO/actions/workflows"),
-					httpmock.JSONResponse(workflowShared.WorkflowsPayload{
-						Workflows: []workflowShared.Workflow{
-							shared.TestWorkflow,
-						},
-					}))
-				reg.Register(
-					httpmock.REST("GET", "repos/OWNER/REPO/actions/workflows/123"),
 					httpmock.JSONResponse(workflowShared.WorkflowsPayload{
 						Workflows: []workflowShared.Workflow{
 							shared.TestWorkflow,
@@ -385,13 +388,6 @@ func TestRerun(t *testing.T) {
 					httpmock.REST("GET", "repos/OWNER/REPO/actions/runs/3"),
 					httpmock.JSONResponse(shared.SuccessfulRun))
 				reg.Register(
-					httpmock.REST("GET", "repos/OWNER/REPO/actions/workflows/123"),
-					httpmock.JSONResponse(workflowShared.WorkflowsPayload{
-						Workflows: []workflowShared.Workflow{
-							shared.TestWorkflow,
-						},
-					}))
-				reg.Register(
 					httpmock.REST("POST", "repos/OWNER/REPO/actions/runs/3/rerun"),
 					httpmock.JSONErrorResponse(403, api.HTTPError{
 						StatusCode: 403,
@@ -412,13 +408,6 @@ func TestRerun(t *testing.T) {
 				reg.Register(
 					httpmock.REST("GET", "repos/OWNER/REPO/actions/runs/3"),
 					httpmock.JSONResponse(shared.SuccessfulRun))
-				reg.Register(
-					httpmock.REST("GET", "repos/OWNER/REPO/actions/workflows/123"),
-					httpmock.JSONResponse(workflowShared.WorkflowsPayload{
-						Workflows: []workflowShared.Workflow{
-							shared.TestWorkflow,
-						},
-					}))
 				reg.Register(
 					httpmock.REST("POST", "repos/OWNER/REPO/actions/runs/3/rerun"),
 					httpmock.JSONErrorResponse(500, api.HTTPError{
