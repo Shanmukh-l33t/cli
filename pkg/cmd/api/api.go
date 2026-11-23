@@ -21,6 +21,7 @@ import (
 	"github.com/cli/cli/v2/internal/gh/ghtelemetry"
 	"github.com/cli/cli/v2/internal/ghinstance"
 	"github.com/cli/cli/v2/internal/ghrepo"
+	"github.com/cli/cli/v2/pkg/cmd/auth/shared"
 	"github.com/cli/cli/v2/pkg/cmd/factory"
 	"github.com/cli/cli/v2/pkg/cmdutil"
 	"github.com/cli/cli/v2/pkg/iostreams"
@@ -53,6 +54,10 @@ type ApiOptions struct {
 	RawFields           []string
 	RequestHeaders      []string
 	Previews            []string
+
+	// tokenEnvSource names the environment variable that supplied the token for
+	// Hostname, so error hints do not suggest commands that cannot update it.
+	tokenEnvSource      string
 	ShowResponseHeaders bool
 	Paginate            bool
 	Slurp               bool
@@ -425,6 +430,11 @@ func apiRun(opts *ApiOptions) error {
 
 	apiHost, _ := cfg.Authentication().APIHostForHost(host)
 
+	// The scope hint can only offer `gh auth refresh` when gh stores the token.
+	if src, writeable := shared.AuthTokenWriteable(cfg.Authentication(), host); !writeable {
+		opts.tokenEnvSource = src
+	}
+
 	tmpl := template.New(bodyWriter, opts.IO.TerminalWidth(), opts.IO.ColorEnabled())
 	err = tmpl.Parse(opts.Template)
 	if err != nil {
@@ -562,7 +572,7 @@ func processResponse(resp *http.Response, opts *ApiOptions, bodyWriter, headersW
 	}
 	if serverError != "" {
 		fmt.Fprintf(opts.IO.ErrOut, "gh: %s\n", serverError)
-		if msg := api.ScopesSuggestion(resp); msg != "" {
+		if msg := api.ScopesSuggestionForTokenSource(resp, opts.tokenEnvSource); msg != "" {
 			fmt.Fprintf(opts.IO.ErrOut, "gh: %s\n", msg)
 		}
 		if u := factory.SSOURL(); u != "" {

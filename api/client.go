@@ -326,7 +326,8 @@ func handleResponse(err error) error {
 			scopesSuggestion: generateScopesSuggestion(restErr.StatusCode,
 				restErr.Headers.Get("X-Accepted-Oauth-Scopes"),
 				restErr.Headers.Get("X-Oauth-Scopes"),
-				restErr.RequestURL.Hostname()),
+				restErr.RequestURL.Hostname(),
+				""),
 		}
 	}
 
@@ -342,10 +343,19 @@ func handleResponse(err error) error {
 // ScopesSuggestion is an error messaging utility that prints the suggestion to request additional OAuth
 // scopes in case a server response indicates that there are missing scopes.
 func ScopesSuggestion(resp *http.Response) string {
+	return ScopesSuggestionForTokenSource(resp, "")
+}
+
+// ScopesSuggestionForTokenSource is ScopesSuggestion with a remediation that
+// matches the credential that made the request. envSource names the environment
+// variable that supplied the token when gh cannot update it itself, and is empty
+// when gh stores the token and can refresh it.
+func ScopesSuggestionForTokenSource(resp *http.Response, envSource string) string {
 	return generateScopesSuggestion(resp.StatusCode,
 		resp.Header.Get("X-Accepted-Oauth-Scopes"),
 		resp.Header.Get("X-Oauth-Scopes"),
-		resp.Request.URL.Hostname())
+		resp.Request.URL.Hostname(),
+		envSource)
 }
 
 // EndpointNeedsScopes adds additional OAuth scopes to an HTTP response as if they were returned from the
@@ -358,7 +368,7 @@ func EndpointNeedsScopes(resp *http.Response, s string) {
 	}
 }
 
-func generateScopesSuggestion(statusCode int, endpointNeedsScopes, tokenHasScopes, hostname string) string {
+func generateScopesSuggestion(statusCode int, endpointNeedsScopes, tokenHasScopes, hostname, envSource string) string {
 	if statusCode < 400 || statusCode > 499 || statusCode == 422 {
 		return ""
 	}
@@ -399,6 +409,11 @@ func generateScopesSuggestion(statusCode int, endpointNeedsScopes, tokenHasScope
 		s = strings.TrimSpace(s)
 		if _, gotScope := gotScopes[s]; s == "" || gotScope {
 			continue
+		}
+		if envSource != "" {
+			return fmt.Sprintf(
+				"This API operation needs the %[1]q scope. Replace the token in the %[2]s environment variable with one that has it.",
+				s, envSource)
 		}
 		return fmt.Sprintf(
 			"This API operation needs the %[1]q scope. To request it, run:  gh auth refresh -h %[2]s -s %[1]s",

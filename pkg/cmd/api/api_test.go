@@ -2008,3 +2008,68 @@ func Test_apiRun_acceptHeader(t *testing.T) {
 		})
 	}
 }
+
+func Test_apiRun_scopeHintMatchesTokenSource(t *testing.T) {
+	tests := []struct {
+		name       string
+		token      string
+		source     string
+		wantHint   string
+		rejectHint string
+	}{
+		{
+			name:       "environment token names the variable",
+			token:      "token",
+			source:     "GH_TOKEN",
+			wantHint:   `This API operation needs the "user" scope. Replace the token in the GH_TOKEN environment variable with one that has it.`,
+			rejectHint: "gh auth refresh",
+		},
+		{
+			name:       "stored token keeps the refresh hint",
+			token:      "token",
+			source:     "oauth_token",
+			wantHint:   `This API operation needs the "user" scope. To request it, run:  gh auth refresh -h github.com -s user`,
+			rejectHint: "environment variable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ios, _, _, stderr := iostreams.Test()
+			options := ApiOptions{
+				IO:          ios,
+				RequestPath: "user/emails",
+				Config: func() (gh.Config, error) {
+					return &ghmock.ConfigMock{
+						AuthenticationFunc: func() gh.AuthConfig {
+							cfg := &config.AuthConfig{}
+							cfg.SetActiveToken(tt.token, tt.source)
+							return cfg
+						},
+					}, nil
+				},
+				HttpClient: func(rootapi.HTTPClientOptions) (*http.Client, error) {
+					var tr roundTripper = func(req *http.Request) (*http.Response, error) {
+						return &http.Response{
+							Request:    req,
+							StatusCode: http.StatusNotFound,
+							Body:       io.NopCloser(strings.NewReader(`{"message":"Not Found"}`)),
+							Header: http.Header{
+								"Content-Type":            {"application/json"},
+								"X-Oauth-Scopes":          {"repo"},
+								"X-Accepted-Oauth-Scopes": {"user, user:email"},
+							},
+						}, nil
+					}
+					return &http.Client{Transport: tr}, nil
+				},
+			}
+
+			err := apiRun(&options)
+			require.Error(t, err)
+			assert.Equal(t, cmdutil.SilentError, err)
+			assert.Contains(t, stderr.String(), tt.wantHint)
+			assert.NotContains(t, stderr.String(), tt.rejectHint)
+		})
+	}
+}
